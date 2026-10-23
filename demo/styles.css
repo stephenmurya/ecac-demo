@@ -399,7 +399,7 @@ dialog.demo-dialog::backdrop { background: oklch(0.18 0.02 48 / .38); }
 .choice-button small { display: block; margin-top: 4px; color: var(--muted-foreground); font-size: 0.8125rem; }
 .demo-notice { padding: 12px 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--info-soft); color: var(--info); font-size: 0.875rem; line-height: 1.55; }
 
-.dialog-select-popover { z-index: 120; border: 1px solid var(--border); border-radius: 9px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 16px 40px oklch(0.12 0.02 330 / .28); }
+.dialog-select-portal { pointer-events: none; }
 
 .settings-list { display: grid; gap: 12px; max-width: 780px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 11px; background: var(--card); }

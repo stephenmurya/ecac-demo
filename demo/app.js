@@ -587,43 +587,51 @@
   function setupDialogSelectPortals(dialog) {
     const registered = new Map();
 
-    function restore(select, popover) {
+    function restore(select, popover, portal) {
       if (popover.parentElement !== select) {
         select.insertBefore(popover, select.querySelector(':scope > input[type="hidden"]'));
       }
       popover.classList.remove("dialog-select-popover");
       popover.removeAttribute("style");
+      portal.removeAttribute("style");
+      portal.remove();
     }
 
-    function place(select, popover) {
+    function place(select, popover, portal) {
       const trigger = select.querySelector(':scope > button[aria-haspopup="listbox"]');
       if (!trigger || trigger.getAttribute("aria-expanded") !== "true") {
-        restore(select, popover);
+        restore(select, popover, portal);
         return;
       }
 
       const triggerBox = trigger.getBoundingClientRect();
-      dialog.appendChild(popover);
+      dialog.appendChild(portal);
+      portal.appendChild(popover);
       popover.classList.add("dialog-select-popover");
       const edge = 12;
-      const gap = 5;
       const below = window.innerHeight - triggerBox.bottom - edge;
       const above = triggerBox.top - edge;
       const openAbove = below < 220 && above > below;
-      const available = Math.max(120, Math.min(320, (openAbove ? above : below) - gap));
+      const available = Math.max(120, Math.min(320, openAbove ? above : below));
       const width = Math.min(triggerBox.width, window.innerWidth - edge * 2);
       const left = Math.max(edge, Math.min(triggerBox.left, window.innerWidth - width - edge));
 
-      Object.assign(popover.style, {
+      Object.assign(portal.style, {
         position: "fixed",
         inset: "auto",
         left: `${left}px`,
         right: "auto",
         width: `${width}px`,
+        height: "0",
+        top: openAbove ? `${triggerBox.top}px` : `${triggerBox.bottom}px`,
+        bottom: "auto",
+        zIndex: "120"
+      });
+      Object.assign(popover.style, {
+        width: `${width}px`,
         minWidth: `${width}px`,
         maxHeight: `${available}px`,
-        top: openAbove ? "auto" : `${triggerBox.bottom + gap}px`,
-        bottom: openAbove ? `${window.innerHeight - triggerBox.top + gap}px` : "auto"
+        pointerEvents: "auto"
       });
       popover.dataset.side = openAbove ? "top" : "bottom";
     }
@@ -633,9 +641,12 @@
       const trigger = select.querySelector(':scope > button[aria-haspopup="listbox"]');
       const popover = select.querySelector(":scope > [data-popover]");
       if (!trigger || !popover) return;
-      const observer = new MutationObserver(() => place(select, popover));
+      const portal = document.createElement("div");
+      portal.className = `${select.className} dialog-select-portal`;
+      portal.dataset.selectInitialized = "true";
+      const observer = new MutationObserver(() => place(select, popover, portal));
       observer.observe(trigger, { attributes: true, attributeFilter: ["aria-expanded"] });
-      registered.set(select, { popover, observer });
+      registered.set(select, { popover, portal, observer });
     }
 
     function scan() {
@@ -644,8 +655,8 @@
 
     const contentObserver = new MutationObserver(scan);
     contentObserver.observe(dialog, { childList: true, subtree: true });
-    const reposition = () => registered.forEach(({ popover }, select) => {
-      if (select.querySelector(':scope > button[aria-expanded="true"]')) place(select, popover);
+    const reposition = () => registered.forEach(({ popover, portal }, select) => {
+      if (select.querySelector(':scope > button[aria-expanded="true"]')) place(select, popover, portal);
     });
     dialog.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
@@ -653,9 +664,9 @@
 
     return () => {
       contentObserver.disconnect();
-      registered.forEach(({ popover, observer }, select) => {
+      registered.forEach(({ popover, portal, observer }, select) => {
         observer.disconnect();
-        restore(select, popover);
+        restore(select, popover, portal);
       });
       window.removeEventListener("resize", reposition);
     };
