@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "ecaConnect.v2";
+  const THEME_KEY = "ecaConnect.theme";
   const app = document.getElementById("app");
   const dialogLayer = document.getElementById("dialog-layer");
 
@@ -63,6 +64,7 @@
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
     rotate: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+    x: '<path d="m18 6-12 12M6 6l12 12"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>'
   };
 
@@ -96,6 +98,46 @@
   function money(value, compact = false) {
     if (compact && value >= 1000000) return `₦${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1)}m`;
     return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
+  }
+
+  function parseFormattedNumber(value) {
+    const digits = String(value ?? "").replace(/[^\d]/g, "");
+    return digits ? Number(digits) : 0;
+  }
+
+  function formatNumber(value) {
+    const digits = String(value ?? "").replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function formatNumberInput(input) {
+    const cursor = input.selectionStart ?? input.value.length;
+    const digitsBeforeCursor = input.value.slice(0, cursor).replace(/[^\d]/g, "").length;
+    input.value = formatNumber(input.value);
+    if (document.activeElement !== input) return;
+    let nextCursor = 0;
+    let seenDigits = 0;
+    while (nextCursor < input.value.length && seenDigits < digitsBeforeCursor) {
+      if (/\d/.test(input.value[nextCursor])) seenDigits += 1;
+      nextCursor += 1;
+    }
+    input.setSelectionRange(nextCursor, nextCursor);
+  }
+
+  function numberInputAttributes(min = 0, max = "") {
+    return `type="text" inputmode="numeric" autocomplete="off" data-number-input data-min="${min}"${max === "" ? "" : ` data-max="${max}"`}`;
+  }
+
+  function applyTheme(theme, remember = true) {
+    const dark = theme === "dark";
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    if (remember) localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+    const toggle = document.getElementById("theme-toggle");
+    if (toggle) {
+      toggle.checked = dark;
+      toggle.setAttribute("aria-label", dark ? "Use light mode" : "Use dark mode");
+    }
   }
 
   function escapeHTML(value) {
@@ -132,16 +174,51 @@
 
   function toast(title, description, category = "success") {
     const toaster = document.getElementById("toaster");
-    if (toaster && typeof toaster.toast === "function") {
-      toaster.toast({ title, description, category });
+    if (!toaster) return;
+    if (typeof toaster.toast === "function") {
+      const node = toaster.toast({ title, description, category, duration: 5000 });
+      const closeButton = document.createElement("button");
+      closeButton.className = "btn toast-dismiss";
+      closeButton.dataset.size = "sm";
+      closeButton.dataset.variant = "ghost";
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close notification");
+      closeButton.innerHTML = icon("x", 16);
+      closeButton.addEventListener("click", () => node.close?.());
+      node.querySelector(".toast-content")?.appendChild(closeButton);
       return;
     }
     const node = document.createElement("div");
     node.className = "toast";
     node.dataset.category = category;
-    node.innerHTML = `<div class="toast-content">${icon(category === "success" ? "check" : "info")}<section><h2>${escapeHTML(title)}</h2><p>${escapeHTML(description)}</p></section></div>`;
+    node.dataset.duration = "5000";
+    node.setAttribute("role", category === "error" ? "alert" : "status");
+    node.setAttribute("aria-atomic", "true");
+    node.innerHTML = `<div class="toast-content">${icon(category === "success" ? "check" : "info")}<section><h2>${escapeHTML(title)}</h2><p>${escapeHTML(description)}</p></section><button class="btn toast-dismiss" data-size="sm" data-variant="ghost" type="button" aria-label="Close notification">${icon("x", 16)}</button></div>`;
     toaster.appendChild(node);
-    window.setTimeout(() => node.remove(), 3200);
+    let remaining = 5000;
+    let startedAt = Date.now();
+    let timer;
+    const close = () => {
+      if (!node.isConnected || node.getAttribute("aria-hidden") === "true") return;
+      window.clearTimeout(timer);
+      node.setAttribute("aria-hidden", "true");
+      window.setTimeout(() => node.remove(), 300);
+    };
+    const start = () => {
+      startedAt = Date.now();
+      timer = window.setTimeout(close, remaining);
+    };
+    const pause = () => {
+      window.clearTimeout(timer);
+      remaining = Math.max(0, remaining - (Date.now() - startedAt));
+    };
+    node.querySelector(".toast-dismiss").addEventListener("click", close);
+    node.addEventListener("pointerenter", pause);
+    node.addEventListener("pointerleave", start);
+    node.addEventListener("focusin", pause);
+    node.addEventListener("focusout", (event) => { if (!node.contains(event.relatedTarget)) start(); });
+    start();
   }
 
   function statusTone(status) {
@@ -396,7 +473,7 @@
       <section class="member-welcome"><h1>Give with purpose</h1><p>Choose where you would like your gift to support the work of ECA Connect.</p></section>
       <div class="giving-layout">
         <section><div class="section-heading"><div><h2>Select a fund</h2></div></div><div class="fund-list">${state.funds.map((fund) => `<button class="fund-option" type="button" data-fund="${fund.id}" aria-pressed="${fund.id === state.selectedFund}"><span class="fund-radio"></span><span><strong>${escapeHTML(fund.name)}</strong><small>${escapeHTML(fund.description)}</small></span>${icon("arrow", 16)}</button>`).join("")}</div></section>
-        <aside class="section-panel amount-card"><header><div><h2>Your gift</h2><p>${escapeHTML(projectGiving && target ? target.name : state.funds.find((f) => f.id === state.selectedFund)?.name || "Giving")}</p></div></header><div class="panel-body">${projectGiving ? `<div class="field"><label for="giving-project-trigger">Choose a project or need</label>${selectControl("giving-project", targets.map((item) => ({ value: item.key, label: item.raised >= item.total ? `${item.name} — Funded` : item.name, group: item.kind === "project" ? "Church projects" : "Approved ministry needs", disabled: item.raised >= item.total })), target?.key, "Choose a project or need", "data-giving-target")}</div>${target ? `<div class="giving-target-progress"><div><strong>${money(target.raised, true)} raised</strong><span>${progress}% of ${money(target.total, true)}</span></div><div class="progress-track" role="progressbar" aria-label="${escapeHTML(target.name)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><div class="progress-fill" style="width:${progress}%"></div></div><p>${escapeHTML(target.detail)} · ${money(remaining, true)} remaining</p></div>` : ""}` : ""}<label for="giving-amount" class="helper">Amount</label><div class="currency-input"><span>₦</span><input id="giving-amount" inputmode="numeric" type="number" min="100" ${projectGiving && remaining ? `max="${remaining}"` : ""} step="100" placeholder="0" /></div>${projectGiving && remaining ? `<button class="btn full-width clear-project" data-variant="outline" type="button" data-action="give-remaining" data-remaining="${remaining}">Give the remaining ${money(remaining, true)}</button>` : ""}<button class="btn full-width" type="button" data-action="give-now">Give now</button></div></aside>
+        <aside class="section-panel amount-card"><header><div><h2>Your gift</h2><p>${escapeHTML(projectGiving && target ? target.name : state.funds.find((f) => f.id === state.selectedFund)?.name || "Giving")}</p></div></header><div class="panel-body">${projectGiving ? `<div class="field"><label for="giving-project-trigger">Choose a project or need</label>${selectControl("giving-project", targets.map((item) => ({ value: item.key, label: item.raised >= item.total ? `${item.name} — Funded` : item.name, group: item.kind === "project" ? "Church projects" : "Approved ministry needs", disabled: item.raised >= item.total })), target?.key, "Choose a project or need", "data-giving-target")}</div>${target ? `<div class="giving-target-progress"><div><strong>${money(target.raised, true)} raised</strong><span>${progress}% of ${money(target.total, true)}</span></div><div class="progress-track" role="progressbar" aria-label="${escapeHTML(target.name)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><div class="progress-fill" style="width:${progress}%"></div></div><p>${escapeHTML(target.detail)} · ${money(remaining, true)} remaining</p></div>` : ""}` : ""}<label for="giving-amount" class="helper">Amount</label><div class="currency-input"><span>₦</span><input id="giving-amount" ${numberInputAttributes(100, projectGiving && remaining ? remaining : "")} placeholder="0" /></div>${projectGiving && remaining ? `<button class="btn full-width clear-project" data-variant="outline" type="button" data-action="give-remaining" data-remaining="${remaining}">Give the remaining ${money(remaining, true)}</button>` : ""}<button class="btn full-width" type="button" data-action="give-now">Give now</button></div></aside>
       </div>
     </div>`;
   }
@@ -507,12 +584,91 @@
     return state.visitors.find((visitor) => visitor.id === state.selectedVisitorId);
   }
 
+  function setupDialogSelectPortals(dialog) {
+    const registered = new Map();
+
+    function restore(select, popover) {
+      if (popover.parentElement !== select) {
+        select.insertBefore(popover, select.querySelector(':scope > input[type="hidden"]'));
+      }
+      popover.classList.remove("dialog-select-popover");
+      popover.removeAttribute("style");
+    }
+
+    function place(select, popover) {
+      const trigger = select.querySelector(':scope > button[aria-haspopup="listbox"]');
+      if (!trigger || trigger.getAttribute("aria-expanded") !== "true") {
+        restore(select, popover);
+        return;
+      }
+
+      const triggerBox = trigger.getBoundingClientRect();
+      dialog.appendChild(popover);
+      popover.classList.add("dialog-select-popover");
+      const edge = 12;
+      const gap = 5;
+      const below = window.innerHeight - triggerBox.bottom - edge;
+      const above = triggerBox.top - edge;
+      const openAbove = below < 220 && above > below;
+      const available = Math.max(120, Math.min(320, (openAbove ? above : below) - gap));
+      const width = Math.min(triggerBox.width, window.innerWidth - edge * 2);
+      const left = Math.max(edge, Math.min(triggerBox.left, window.innerWidth - width - edge));
+
+      Object.assign(popover.style, {
+        position: "fixed",
+        inset: "auto",
+        left: `${left}px`,
+        right: "auto",
+        width: `${width}px`,
+        minWidth: `${width}px`,
+        maxHeight: `${available}px`,
+        top: openAbove ? "auto" : `${triggerBox.bottom + gap}px`,
+        bottom: openAbove ? `${window.innerHeight - triggerBox.top + gap}px` : "auto"
+      });
+      popover.dataset.side = openAbove ? "top" : "bottom";
+    }
+
+    function register(select) {
+      if (registered.has(select)) return;
+      const trigger = select.querySelector(':scope > button[aria-haspopup="listbox"]');
+      const popover = select.querySelector(":scope > [data-popover]");
+      if (!trigger || !popover) return;
+      const observer = new MutationObserver(() => place(select, popover));
+      observer.observe(trigger, { attributes: true, attributeFilter: ["aria-expanded"] });
+      registered.set(select, { popover, observer });
+    }
+
+    function scan() {
+      dialog.querySelectorAll(".select").forEach(register);
+    }
+
+    const contentObserver = new MutationObserver(scan);
+    contentObserver.observe(dialog, { childList: true, subtree: true });
+    const reposition = () => registered.forEach(({ popover }, select) => {
+      if (select.querySelector(':scope > button[aria-expanded="true"]')) place(select, popover);
+    });
+    dialog.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    scan();
+
+    return () => {
+      contentObserver.disconnect();
+      registered.forEach(({ popover, observer }, select) => {
+        observer.disconnect();
+        restore(select, popover);
+      });
+      window.removeEventListener("resize", reposition);
+    };
+  }
+
   function openDialog({ title, description = "", body, confirmLabel = "Confirm", confirmVariant = "default", onConfirm, hideConfirm = false }) {
-    dialogLayer.innerHTML = `<dialog class="demo-dialog"><form method="dialog" class="dialog-card"><header><div><h2>${escapeHTML(title)}</h2>${description ? `<p>${escapeHTML(description)}</p>` : ""}</div><button class="btn icon-button" data-size="sm" data-variant="ghost" value="cancel" aria-label="Close dialog">×</button></header><div class="dialog-body">${body}</div><footer><button class="btn" data-variant="outline" value="cancel">Cancel</button>${hideConfirm ? "" : `<button class="btn" data-variant="${confirmVariant}" value="confirm">${escapeHTML(confirmLabel)}</button>`}</footer></form></dialog>`;
+    dialogLayer.innerHTML = `<dialog class="demo-dialog"><form method="dialog" class="dialog-card"><header><div><h2>${escapeHTML(title)}</h2>${description ? `<p>${escapeHTML(description)}</p>` : ""}</div><button class="btn icon-button" data-size="sm" data-variant="ghost" value="cancel" formnovalidate aria-label="Close dialog">×</button></header><div class="dialog-body">${body}</div><footer><button class="btn" data-variant="outline" value="cancel" formnovalidate>Cancel</button>${hideConfirm ? "" : `<button class="btn" data-variant="${confirmVariant}" value="confirm">${escapeHTML(confirmLabel)}</button>`}</footer></form></dialog>`;
     const dialog = dialogLayer.querySelector("dialog");
     if (window.basecoat?.initAll) window.basecoat.initAll({ force: true });
     dialog.showModal();
+    const cleanupSelectPortals = setupDialogSelectPortals(dialog);
     dialog.addEventListener("close", () => {
+      cleanupSelectPortals();
       if (dialog.returnValue === "confirm" && onConfirm) onConfirm(dialog);
       dialogLayer.innerHTML = "";
     }, { once: true });
@@ -538,7 +694,7 @@
 
   function openCheckout() {
     const amountInput = document.getElementById("giving-amount");
-    const amount = Number(amountInput?.value || 0);
+    const amount = parseFormattedNumber(amountInput?.value);
     const fund = state.funds.find((item) => item.id === state.selectedFund);
     const target = state.selectedFund === "projects" ? selectedGivingTarget() : null;
     const remaining = target ? Math.max(0, target.total - target.raised) : 0;
@@ -587,7 +743,7 @@
         <button class="choice-button" type="button" data-choice="money" aria-pressed="true"><span class="choice-icon">₦</span><span><strong>Contribute money</strong><small>Choose a smaller amount</small></span></button>
         <button class="choice-button" type="button" data-choice="supply" aria-pressed="false"><span class="choice-icon">${icon("package", 16)}</span><span><strong>Supply this item</strong><small>Offer to purchase and deliver a new item</small></span></button>
         <button class="choice-button" type="button" data-choice="owned" aria-pressed="false"><span class="choice-icon">${icon("house", 16)}</span><span><strong>Donate one I already own</strong><small>Submit condition and delivery details for review</small></span></button>
-      </div><div id="contribution-fields"><div class="field"><label for="contribution-amount">Amount</label><input class="input" id="contribution-amount" type="number" min="100" max="${remaining}" value="${Math.min(100000, remaining)}" /></div></div><div class="demo-notice">Item offers are reviewed separately and do not change the amount raised.</div>`,
+      </div><div id="contribution-fields"><div class="field"><label for="contribution-amount">Amount</label><input class="input" id="contribution-amount" ${numberInputAttributes(100, remaining)} value="${formatNumber(Math.min(100000, remaining))}" /></div></div><div class="demo-notice">Item offers are reviewed separately and do not change the amount raised.</div>`,
       confirmLabel: "Continue",
       onConfirm: (node) => {
         if (chosen === "full") {
@@ -596,8 +752,9 @@
           need.contributionType = "Money";
           toast("Need fully funded", `${need.item} now shows as funded.`);
         } else if (chosen === "money") {
-          const amount = Math.max(0, Number(node.querySelector("#contribution-amount")?.value || 0));
+          const amount = parseFormattedNumber(node.querySelector("#contribution-amount")?.value);
           if (amount < 100) { toast("Contribution not recorded", "Enter at least ₦100.", "error"); return; }
+          if (amount > remaining) { toast("Contribution not recorded", `Enter no more than ${money(remaining)}.`, "error"); return; }
           need.raised = Math.min(need.cost, need.raised + amount);
           need.status = need.raised >= need.cost ? "Funded" : "Part funded";
           need.contributionType = "Money";
@@ -617,7 +774,7 @@
       chosen = button.dataset.choice;
       dialog.querySelectorAll("[data-choice]").forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
       const fields = dialog.querySelector("#contribution-fields");
-      if (chosen === "money") fields.innerHTML = `<div class="field"><label for="contribution-amount">Amount</label><input class="input" id="contribution-amount" type="number" min="100" max="${remaining}" value="${Math.min(100000, remaining)}" /></div>`;
+      if (chosen === "money") fields.innerHTML = `<div class="field"><label for="contribution-amount">Amount</label><input class="input" id="contribution-amount" ${numberInputAttributes(100, remaining)} value="${formatNumber(Math.min(100000, remaining))}" /></div>`;
       else if (chosen === "owned") fields.innerHTML = `<div class="field"><label for="item-condition-trigger">Condition</label>${selectControl("item-condition", ["New", "Good", "Used, serviceable"], "Good", "Choose condition")}</div>`;
       else if (chosen === "supply") fields.innerHTML = `<div class="field"><label for="item-condition-trigger">Expected condition</label>${selectControl("item-condition", ["New", "Manufacturer refurbished"], "New", "Choose condition")}</div>`;
       else fields.innerHTML = `<div class="demo-notice">The full amount is ${money(remaining)}.</div>`;
@@ -631,11 +788,12 @@
     openDialog({
       title: `Contribute to ${project.name}`,
       description: `${money(project.goal - project.raised)} remains toward the goal.`,
-      body: `<div class="field"><label for="project-amount">Amount</label><div class="currency-input" style="margin:0"><span>₦</span><input id="project-amount" type="number" min="100" value="100000" /></div></div>`,
+      body: `<div class="field"><label for="project-amount">Amount</label><div class="currency-input" style="margin:0"><span>₦</span><input id="project-amount" ${numberInputAttributes(100, project.goal - project.raised)} value="100,000" /></div></div>`,
       confirmLabel: "Add contribution",
       onConfirm: (dialog) => {
-        const amount = Number(dialog.querySelector("#project-amount")?.value || 0);
+        const amount = parseFormattedNumber(dialog.querySelector("#project-amount")?.value);
         if (amount < 100) { toast("Contribution not recorded", "Enter at least ₦100.", "error"); return; }
+        if (amount > project.goal - project.raised) { toast("Contribution not recorded", `Enter no more than ${money(project.goal - project.raised)}.`, "error"); return; }
         project.raised = Math.min(project.goal, project.raised + amount);
         project.supporters += 1;
         persist();
@@ -649,13 +807,13 @@
     openDialog({
       title: "Submit a ministry need",
       description: "Church administration reviews every item before publication.",
-      body: `<div class="editor-grid"><div class="field"><label for="need-ministry-trigger">Ministry</label>${selectControl("need-ministry", ["Music Ministry", "Media Ministry", "Welfare Ministry", "Children's Ministry"], "Music Ministry", "Choose ministry")}</div><div class="field"><label for="need-item">Item name</label><input class="input" id="need-item" required placeholder="e.g. Wireless microphones" /></div></div><div class="field"><label for="need-description">Description</label><textarea class="input" id="need-description" placeholder="What is needed?"></textarea></div><div class="editor-grid"><div class="field"><label for="need-quantity">Quantity</label><input class="input" id="need-quantity" type="number" min="1" value="1" /></div><div class="field"><label for="need-cost">Estimated cost</label><input class="input" id="need-cost" type="number" min="0" placeholder="0" /></div></div><div class="editor-grid"><div class="field"><label for="need-priority-trigger">Priority</label>${selectControl("need-priority", ["High", "Medium", "Low"], "Medium", "Choose priority")}</div><div class="field"><label for="need-image">Optional image</label><input class="input" id="need-image" type="file" accept="image/*" disabled /><small>Image upload is not available yet.</small></div></div><div class="field"><label for="need-reason">Reason</label><textarea class="input" id="need-reason" placeholder="Why is this needed now?"></textarea></div>`,
+      body: `<div class="editor-grid"><div class="field"><label for="need-ministry-trigger">Ministry</label>${selectControl("need-ministry", ["Music Ministry", "Media Ministry", "Welfare Ministry", "Children's Ministry"], "Music Ministry", "Choose ministry")}</div><div class="field"><label for="need-item">Item name</label><input class="input" id="need-item" required placeholder="e.g. Wireless microphones" /></div></div><div class="field"><label for="need-description">Description</label><textarea class="input" id="need-description" placeholder="What is needed?"></textarea></div><div class="editor-grid"><div class="field"><label for="need-quantity">Quantity</label><input class="input" id="need-quantity" ${numberInputAttributes(1)} value="1" /></div><div class="field"><label for="need-cost">Estimated cost</label><input class="input" id="need-cost" ${numberInputAttributes(0)} placeholder="0" /></div></div><div class="editor-grid"><div class="field"><label for="need-priority-trigger">Priority</label>${selectControl("need-priority", ["High", "Medium", "Low"], "Medium", "Choose priority")}</div><div class="field"><label for="need-image">Optional image</label><input class="input" id="need-image" type="file" accept="image/*" disabled /><small>Image upload is not available yet.</small></div></div><div class="field"><label for="need-reason">Reason</label><textarea class="input" id="need-reason" placeholder="Why is this needed now?"></textarea></div>`,
       confirmLabel: "Submit for approval",
       onConfirm: (dialog) => {
         const item = dialog.querySelector("#need-item").value.trim();
-        const cost = Number(dialog.querySelector("#need-cost").value || 0);
+        const cost = parseFormattedNumber(dialog.querySelector("#need-cost").value);
         if (!item || cost <= 0) { toast("Need not submitted", "Add an item name and estimated cost.", "error"); return; }
-        state.pendingNeeds.unshift({ id: `pending-${Date.now()}`, ministry: dialog.querySelector("#need-ministry").value, item, description: dialog.querySelector("#need-description").value.trim(), quantity: Number(dialog.querySelector("#need-quantity").value || 1), cost, priority: dialog.querySelector("#need-priority").value, reason: dialog.querySelector("#need-reason").value.trim(), status: "Pending" });
+        state.pendingNeeds.unshift({ id: `pending-${Date.now()}`, ministry: dialog.querySelector("#need-ministry").value, item, description: dialog.querySelector("#need-description").value.trim(), quantity: parseFormattedNumber(dialog.querySelector("#need-quantity").value) || 1, cost, priority: dialog.querySelector("#need-priority").value, reason: dialog.querySelector("#need-reason").value.trim(), status: "Pending" });
         persist();
         render();
         toast("Need submitted", `${item} is now awaiting church administration approval.`);
@@ -667,11 +825,11 @@
     openDialog({
       title: "Create a church project",
       description: "Members will be able to choose this project when giving.",
-      body: `<div class="field"><label for="project-name">Project name</label><input class="input" id="project-name" placeholder="e.g. Youth Centre Renovation" /></div><div class="field"><label for="project-description">Description</label><textarea class="input" id="project-description" placeholder="What will this project provide?"></textarea></div><div class="editor-grid"><div class="field"><label for="project-goal">Amount needed</label><input class="input" id="project-goal" type="number" min="100" placeholder="0" /></div><div class="field"><label for="project-deadline">Target date</label><input class="input" id="project-deadline" type="date" /></div></div>`,
+      body: `<div class="field"><label for="project-name">Project name</label><input class="input" id="project-name" placeholder="e.g. Youth Centre Renovation" /></div><div class="field"><label for="project-description">Description</label><textarea class="input" id="project-description" placeholder="What will this project provide?"></textarea></div><div class="editor-grid"><div class="field"><label for="project-goal">Amount needed</label><input class="input" id="project-goal" ${numberInputAttributes(100)} placeholder="0" /></div><div class="field"><label for="project-deadline">Target date</label><input class="input" id="project-deadline" type="date" /></div></div>`,
       confirmLabel: "Create project",
       onConfirm: (dialog) => {
         const name = dialog.querySelector("#project-name").value.trim();
-        const goal = Number(dialog.querySelector("#project-goal").value || 0);
+        const goal = parseFormattedNumber(dialog.querySelector("#project-goal").value);
         if (!name || goal < 100) { toast("Project not created", "Add a project name and amount needed.", "error"); return; }
         const date = dialog.querySelector("#project-deadline").value;
         const project = { id: `project-${Date.now()}`, name, description: dialog.querySelector("#project-description").value.trim() || "A church project members can support.", goal, raised: 0, supporters: 0, deadline: date ? new Date(`${date}T12:00:00`).toLocaleDateString("en-NG", { dateStyle: "long" }) : "No target date" };
@@ -736,7 +894,7 @@
     const dialog = openDialog({
       title: "Record an offline contribution",
       description: "Add money or an item received outside the member giving page.",
-      body: `<div class="field"><label for="offline-type-trigger">Contribution type</label>${selectControl("offline-type", [{ value: "money", label: "Money" }, { value: "item", label: "Item or equipment" }], "money", "Choose a type", "data-offline-type")}</div><div class="field"><label for="offline-target-trigger">Project or need</label>${selectControl("offline-target", targets, defaultTarget, "Choose a project or need")}</div><div class="editor-grid"><div class="field"><label for="offline-name">Contributor name</label><input class="input" id="offline-name" placeholder="Name or Anonymous" /></div><div class="field"><label for="offline-date">Date received</label><input class="input" id="offline-date" type="date" max="${localDateValue()}" value="${localDateValue()}" /></div></div><div data-offline-money><div class="field"><label for="offline-amount">Amount</label><input class="input" id="offline-amount" type="number" min="100" placeholder="0" /></div></div><div data-offline-item hidden><div class="field"><label for="offline-item">Item details</label><textarea class="input" id="offline-item" placeholder="What was given and what condition is it in?"></textarea></div></div><div class="field"><label for="offline-note">Note</label><textarea class="input" id="offline-note" placeholder="Optional receipt or handover details"></textarea></div>`,
+      body: `<div class="field"><label for="offline-type-trigger">Contribution type</label>${selectControl("offline-type", [{ value: "money", label: "Money" }, { value: "item", label: "Item or equipment" }], "money", "Choose a type", "data-offline-type")}</div><div class="field"><label for="offline-target-trigger">Project or need</label>${selectControl("offline-target", targets, defaultTarget, "Choose a project or need")}</div><div class="editor-grid"><div class="field"><label for="offline-name">Contributor name</label><input class="input" id="offline-name" placeholder="Name or Anonymous" /></div><div class="field"><label for="offline-date">Date received</label><input class="input" id="offline-date" type="date" max="${localDateValue()}" value="${localDateValue()}" /></div></div><div data-offline-money><div class="field"><label for="offline-amount">Amount</label><input class="input" id="offline-amount" ${numberInputAttributes(100)} placeholder="0" /></div></div><div data-offline-item hidden><div class="field"><label for="offline-item">Item details</label><textarea class="input" id="offline-item" placeholder="What was given and what condition is it in?"></textarea></div></div><div class="field"><label for="offline-note">Note</label><textarea class="input" id="offline-note" placeholder="Optional receipt or handover details"></textarea></div>`,
       confirmLabel: "Record contribution",
       onConfirm: (node) => {
         const type = node.querySelector("#offline-type").value;
@@ -746,7 +904,7 @@
         if (!target) { toast("Contribution not recorded", "Choose a project or need.", "error"); return; }
         const record = { id: `offline-${Date.now()}`, type, targetKey, target: target.name, contributor, date: node.querySelector("#offline-date").value, note: node.querySelector("#offline-note").value.trim(), createdAt: nowLabel() };
         if (type === "money") {
-          const amount = Number(node.querySelector("#offline-amount").value || 0);
+          const amount = parseFormattedNumber(node.querySelector("#offline-amount").value);
           const remaining = Math.max(0, target.total - target.raised);
           if (amount < 100 || amount > remaining) { toast("Contribution not recorded", `Enter an amount between ₦100 and ${money(remaining)}.`, "error"); return; }
           record.amount = amount;
@@ -879,7 +1037,7 @@
       openCheckout();
     } else if (action === "give-remaining") {
       const amountInput = document.getElementById("giving-amount");
-      if (amountInput) { amountInput.value = event.target.closest("[data-remaining]")?.dataset.remaining || ""; amountInput.focus(); }
+      if (amountInput) { amountInput.value = formatNumber(event.target.closest("[data-remaining]")?.dataset.remaining || ""); amountInput.focus(); }
     } else if (action === "create-project") {
       openProjectCreation();
     } else if (action === "record-offline-contribution") {
@@ -911,6 +1069,7 @@
   });
 
   document.addEventListener("input", (event) => {
+    if (event.target.matches("[data-number-input]")) formatNumberInput(event.target);
     if (event.target.matches('[data-action="visitor-search"]')) {
       const term = event.target.value.trim().toLowerCase();
       document.querySelectorAll("[data-visitor]").forEach((button) => { button.hidden = !button.textContent.toLowerCase().includes(term); });
@@ -926,6 +1085,10 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches("#theme-toggle")) {
+      applyTheme(event.target.checked ? "dark" : "light");
+      return;
+    }
     if (event.target.matches("[data-giving-target]")) {
       state.selectedGivingTarget = event.detail?.value || event.target.value;
       persist();
@@ -954,5 +1117,9 @@
 
   window.addEventListener("resize", syncResponsiveSidebar);
 
-  document.addEventListener("DOMContentLoaded", () => { syncResponsiveSidebar(); render(); }, { once: true });
+  document.addEventListener("DOMContentLoaded", () => {
+    applyTheme(document.documentElement.classList.contains("dark") ? "dark" : "light", false);
+    syncResponsiveSidebar();
+    render();
+  }, { once: true });
 })();

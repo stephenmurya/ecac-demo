@@ -6,6 +6,16 @@
     <meta name="description" content="ECA Connect church administration workspace." />
     <title>ECA Connect</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("ecaConnect.theme");
+        const theme = savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.dataset.theme = theme;
+      } catch (error) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
     <link rel="stylesheet" href="assets/basecoat-maia.cdn.min.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -51,6 +61,10 @@
             </button>
           </div>
           <div class="topbar-actions">
+            <label class="theme-control" for="theme-toggle">
+              <span>Dark mode</span>
+              <input class="input" id="theme-toggle" type="checkbox" role="switch" aria-label="Use dark mode" />
+            </label>
             <div class="view-switch" role="group" aria-label="Choose view">
               <button type="button" data-view="admin">Admin view</button>
               <button type="button" data-view="member">Member view</button>
