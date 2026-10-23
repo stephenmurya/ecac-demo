@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ECA Connect church administration workspace." />
+    <title>ECA Connect</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/basecoat-maia.cdn.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div id="toaster" class="toaster" aria-live="polite"></div>
+
+    <div class="app-shell">
+      <aside id="sidebar" class="app-sidebar">
+        <nav aria-label="Primary navigation">
+          <header class="brand-lockup">
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18"/><path d="M7 8h10"/></svg>
+            </span>
+            <strong>ECA Connect</strong>
+          </header>
+
+          <section class="sidebar-scroll scrollbar-sm">
+            <div role="group" aria-labelledby="nav-workspace">
+              <h3 id="nav-workspace">Workspace</h3>
+              <ul id="primary-nav"></ul>
+            </div>
+            <div role="group" aria-labelledby="nav-governance">
+              <h3 id="nav-governance">Governance</h3>
+              <ul id="governance-nav"></ul>
+            </div>
+          </section>
+
+          <footer class="sidebar-footer">
+            <button class="profile-button" type="button" data-nav="settings">
+              <span class="avatar">AO</span>
+              <span><strong>Amara Okafor</strong><small>Church Administrator</small></span>
+            </button>
+          </footer>
+        </nav>
+      </aside>
+
+      <div class="app-main">
+        <header class="topbar">
+          <div class="topbar-start">
+            <button id="mobile-menu" class="btn icon-button mobile-only" data-variant="ghost" type="button" aria-label="Open navigation">
+              <span aria-hidden="true">☰</span>
+            </button>
+          </div>
+          <div class="topbar-actions">
+            <div class="view-switch" role="group" aria-label="Choose view">
+              <button type="button" data-view="admin">Admin view</button>
+              <button type="button" data-view="member">Member view</button>
+            </div>
+            <span class="avatar avatar-small" aria-hidden="true">AO</span>
+          </div>
+        </header>
+
+        <main id="main-content" tabindex="-1">
+          <div id="app" aria-live="polite"></div>
+        </main>
+      </div>
+    </div>
+
+    <div id="dialog-layer"></div>
+    <script src="assets/basecoat-all.min.js" defer></script>
+    <script src="data.js" defer></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
